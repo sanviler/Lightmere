@@ -1,0 +1,20 @@
+# build output
+/build/
+/build-*/
+/out/
+/dist/
+.vs/
+CMakeUserPresets.json
+
+# the original game files and anything made from them: never commit them
+*.adf
+*.ADF
+/data/
+/Darkmere/
+saves/
+SaveDisk
+
+# files written by the program
+lightmere.ini
+lightmere_*.png
+lightmere_test_*.bmp
