@@ -19,6 +19,13 @@ public:
     bool isEmpty(size_t i) const;
     // Returns the unpacked entry (empty for an empty slot).
     Bytes entry(size_t i) const;
+    // the entry as stored in the archive (packed or not)
+    Bytes raw(size_t i) const;
+
+    // a new archive from entries as they are to be stored
+    static Bytes build(const std::vector<Bytes>& rawEntries);
+    // an entry stored without packing ("RNC" method 0, understood by the game's decruncher)
+    static Bytes stored(const Bytes& data);
 
 private:
     struct Entry { uint32_t off, len; };

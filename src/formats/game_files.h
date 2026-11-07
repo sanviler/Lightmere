@@ -23,6 +23,8 @@ public:
     bool has(const std::string& name) const;
     Bytes read(const std::string& name) const;            // throws FormatError if missing
     std::vector<std::string> names() const;
+    // replaces the contents of a file (in memory: the original is not touched), e.g. with corrected texts
+    void replace(const std::string& name, Bytes data);
     const std::string& description() const { return description_; }
 
     // Opens the game in a folder: the four ADF images (any names) first, then a WHDLoad installation (the folder

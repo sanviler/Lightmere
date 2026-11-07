@@ -14,28 +14,15 @@
     },
     {
       "name": "linux",
-      "displayName": "Linux x64 (system SDL2)",
+      "displayName": "Linux / macOS (system SDL2)",
       "generator": "Unix Makefiles",
       "binaryDir": "${sourceDir}/build",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
-      }
-    },
-    {
-      "name": "macos",
-      "displayName": "macOS (system SDL2, application bundle)",
-      "generator": "Unix Makefiles",
-      "binaryDir": "${sourceDir}/build/macos",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_OSX_DEPLOYMENT_TARGET": "11.0"
-      }
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
     }
   ],
   "buildPresets": [
     { "name": "release", "configurePreset": "windows-vcpkg", "configuration": "Release" },
     { "name": "debug", "configurePreset": "windows-vcpkg", "configuration": "Debug" },
-    { "name": "linux", "configurePreset": "linux" },
-    { "name": "macos", "configurePreset": "macos" }
+    { "name": "linux", "configurePreset": "linux" }
   ]
 }

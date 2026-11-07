@@ -8,6 +8,7 @@ endif()
 # always three numbers (x.y.z), as in the window title
 set(LM_VERSION_SHORT "${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH}")
 configure_file(src/version/version.h.in ${CMAKE_BINARY_DIR}/generated/version.h @ONLY)
+
 # Windows: with the vcpkg triplet x64-windows-static (CMakePresets.json) the executable is self-contained,
 # SDL2 and the C++ runtime included
 if(VCPKG_TARGET_TRIPLET MATCHES "static")
@@ -22,7 +23,12 @@ if(MSVC)
 else()
   add_compile_options(-Wall -Wextra -Wshadow -Wconversion -Wno-sign-conversion)
 endif()
-option(LM_BUILD_TOOLS "Build the developer tools (amirun, lmtool, lmviewer)" OFF)
+
+option(LM_BUILD_TOOLS "Build the developer tools (amirun, lmtool, lmtext, lmviewer)" OFF)
+# Linux release builds: C++ runtime linked in and no dependency on the newest glibc (runs on glibc 2.34 and
+# later: Ubuntu 22.04, Debian 12, Fedora 35 and newer). Only SDL2 is needed on the user's system.
+option(LM_LINUX_PORTABLE "Linux: build an executable for other distributions" OFF)
+
 # --- game file formats and the room renderer (no external dependencies) ---
 add_library(lmformats STATIC
   src/formats/rnc1.cpp
@@ -35,10 +41,13 @@ add_library(lmformats STATIC
   src/formats/anims.cpp
   src/formats/spawn.cpp
   src/formats/game_files.cpp
+  src/formats/text_codec.cpp
+  src/formats/text_files.cpp
   src/platform/sha256.cpp
   src/engine/room_renderer.cpp
 )
 target_include_directories(lmformats PUBLIC src ${CMAKE_BINARY_DIR}/generated)
+
 # --- 68000 CPU (Moira, MIT licence) and the Amiga machine ---
 add_library(moira STATIC ext/moira/Moira.cpp ext/moira/MoiraCore68000.cpp ext/moira/MoiraCore68010.cpp
             ext/moira/MoiraCore68020.cpp ext/moira/MoiraDebugger.cpp)
@@ -60,6 +69,7 @@ add_library(lmamiga STATIC
 )
 target_include_directories(lmamiga PUBLIC src)
 target_link_libraries(lmamiga PUBLIC moira lmformats)
+
 # --- the game ---
 find_package(SDL2 CONFIG REQUIRED)
 set(LM_SDL_LIBS $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main> $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>)
@@ -79,38 +89,27 @@ if(WIN32)
   configure_file(src/version/lightmere.rc.in ${CMAKE_BINARY_DIR}/generated/lightmere.rc @ONLY)
   list(APPEND LM_GAME_SOURCES ${CMAKE_BINARY_DIR}/generated/lightmere.rc)
 endif()
-
-if(APPLE)
-  add_executable(lightmere MACOSX_BUNDLE ${LM_GAME_SOURCES})
-  set_target_properties(lightmere PROPERTIES
-    OUTPUT_NAME "Lightmere"
-    MACOSX_BUNDLE_BUNDLE_NAME "Lightmere"
-    MACOSX_BUNDLE_GUI_IDENTIFIER "org.sanviler.lightmere"
-    MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
-    MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
-    MACOSX_BUNDLE_COPYRIGHT "Copyright © 2026 Lorenzo Castelletta"
-  )
-elseif(WIN32)
-  add_executable(lightmere WIN32 ${LM_GAME_SOURCES})
-else()
-  add_executable(lightmere ${LM_GAME_SOURCES})
-endif()
-
+add_executable(lightmere WIN32 ${LM_GAME_SOURCES})
 target_link_libraries(lightmere PRIVATE lmamiga ${LM_SDL_LIBS})
 if(WIN32)
   target_link_libraries(lightmere PRIVATE ole32 shell32)   # the folder picker (IFileOpenDialog)
 endif()
-install(TARGETS lightmere
-  BUNDLE DESTINATION .
-  RUNTIME DESTINATION .
-)
+if(LM_LINUX_PORTABLE AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  target_sources(lightmere PRIVATE src/platform/glibc_compat.cpp)
+  target_link_options(lightmere PRIVATE -static-libstdc++)
+  set_target_properties(lightmere PROPERTIES SKIP_BUILD_RPATH ON)
+endif()
+install(TARGETS lightmere RUNTIME DESTINATION .)
 install(FILES README.md LICENSE CHANGELOG.md DESTINATION . OPTIONAL)
+
 # --- developer tools (not shipped) ---
 if(LM_BUILD_TOOLS)
   add_executable(amirun src/tools/amirun.cpp)                 # the machine without a window, for tests
   target_link_libraries(amirun PRIVATE lmamiga)
   add_executable(lmtool src/tools/lmtool.cpp)                 # checks of the file formats
   target_link_libraries(lmtool PRIVATE lmformats)
-  add_executable(lmviewer src/tools/viewer.cpp src/platform/video.cpp)   # viewer of the graphics and rooms
+  add_executable(lmtext src/tools/lmtext.cpp)                 # the game texts as readable files (translations)
+  target_link_libraries(lmtext PRIVATE lmformats)
+  add_executable(lmviewer src/tools/viewer.cpp src/platform/video.cpp)   # viewer of graphics and rooms
   target_link_libraries(lmviewer PRIVATE lmformats ${LM_SDL_LIBS})
 endif()

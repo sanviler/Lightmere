@@ -27,6 +27,8 @@
 //   --saves <folder>     where the save disk is kept (default: "saves" next to the executable)
 //   --original           only the original game code (no routines translated to C++)
 //   --custom1 N          cheats for testing: 1 infinite help, 2 infinite magic, 4 infinite energy
+//   --texts <path>       corrected game texts (a folder of text files made by lmtext, or one file): for
+//                        translators, to see their corrections in the game
 // Automated tests (developers): --test-frames N, --test-script file, --window-size WxH.
 #include "amiga/machine.h"
 #include "app/input.h"
@@ -35,6 +37,7 @@
 #include "app/ui.h"
 #include "formats/epf.h"
 #include "formats/game_files.h"
+#include "formats/text_files.h"
 #include "game/fixes.h"
 #include "game/ham_fix.h"
 #include "game/live_view.h"
@@ -89,7 +92,7 @@ void placeHero(amiga::Machine& m, int room, int x, int y) {
 } // namespace
 
 int main(int argc, char** argv) {
-    std::string dataDir, savesDir;
+    std::string dataDir, savesDir, textsPath;
     bool debug = false, fullscreen = false, originalOnly = false;
     uint32_t custom1 = 0;
     long testFrames = -1;
@@ -101,6 +104,7 @@ int main(int argc, char** argv) {
         if (a == "--debug") debug = true;
         else if (a == "--fullscreen") fullscreen = true;
         else if (a == "--data") dataDir = next();
+        else if (a == "--texts") textsPath = next();
         else if (a == "--saves") savesDir = next();
         else if (a == "--original") originalOnly = true;
         else if (a == "--custom1") custom1 = uint32_t(std::strtoul(next().c_str(), nullptr, 0));
@@ -174,6 +178,34 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "game files: %s (verified)\n", gameFiles.description().c_str());
     if (savesDir.empty()) savesDir = (exeDir / "saves").string();
 
+    // corrected texts (--texts): put into the game files in memory; the texts of the program are written into
+    // the program once it is loaded
+    static std::vector<dm::text::ProgramPatch> programTexts;
+    if (!textsPath.empty()) {
+        std::vector<dm::text::TextFile> files;
+        std::string terr;
+        dm::text::ApplyReport r;
+        if (!dm::text::loadTexts(toPath(textsPath).string(), files, terr)) r.errors.push_back(terr);
+        else {
+            r = dm::text::apply(files, gameFiles);
+            programTexts = dm::text::programPatches(files, gameFiles, r);
+        }
+        std::fprintf(stderr, "texts: %d messages corrected, %zu warnings, %zu errors\n", r.changed, r.warnings.size(), r.errors.size());
+        std::string list;
+        int shown = 0;
+        for (const auto* v : {&r.errors, &r.warnings})
+            for (const std::string& s : *v) {
+                std::fprintf(stderr, "texts: %s\n", s.c_str());
+                if (shown++ < 12) list += "- " + s + "\n";
+            }
+        if (!list.empty()) {
+            if (shown > 12) list += "- ... (" + std::to_string(shown - 12) + " more)\n";
+            SDL_ShowSimpleMessageBox(r.errors.empty() ? SDL_MESSAGEBOX_WARNING : SDL_MESSAGEBOX_ERROR, kTitle,
+                                     ("Corrected texts (" + textsPath + "): " + std::to_string(r.changed) +
+                                      " messages applied.\n\n" + list).c_str(), nullptr);
+        }
+    }
+
     amiga::Machine m;
     m.log = [](const std::string& s) { std::fprintf(stderr, "[amiga] %s\n", s.c_str()); };
     static dm::game::Routines routineStats;
@@ -182,6 +214,12 @@ int main(int argc, char** argv) {
     hamFix.load();
     static dm::game::PanelText panelText;           // strings of the panel (place name, target name)
     m.onGamePatched = [rmode](amiga::Machine& mm) {
+        for (const dm::text::ProgramPatch& p : programTexts) {   // corrected texts of the program
+            const uint32_t a = mm.gameBase() + p.offset;
+            bool same = true;
+            for (size_t k = 0; k < p.original.size(); ++k) same = same && mm.peek8(a + uint32_t(k)) == uint8_t(p.original[k]);
+            if (same) for (size_t k = 0; k < p.text.size(); ++k) mm.poke8(a + uint32_t(k), uint8_t(p.text[k]));
+        }
         dm::game::applyFixes(mm);
         dm::game::installRoutines(mm, rmode, routineStats);
         panelText.install(mm);

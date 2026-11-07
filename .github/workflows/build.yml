@@ -1,5 +1,5 @@
-# Builds Lightmere on Windows, Linux and macOS.
-# On version tags (v0.8.0, ...) all three packages are attached to one GitHub release.
+# Builds Lightmere on Windows, Linux and macOS at every push and pull request.
+# On a version tag (v0.8.0, ...) the portable zips are attached to a GitHub release.
 name: build
 
 on:
@@ -14,168 +14,76 @@ permissions:
 
 jobs:
   windows:
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
-
       - name: Configure (vcpkg, static SDL2)
         shell: pwsh
         run: |
           $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT
           cmake --preset windows-vcpkg
-
       - name: Build
         run: cmake --build --preset release
-
       - name: Package
         shell: pwsh
-        env:
-          RELEASE_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
-        run: ./scripts/package.ps1 -BuildDir build/Release -OutDir dist -Version $env:RELEASE_VERSION
-
+        run: ./scripts/package.ps1 -BuildDir build/Release -OutDir dist
       - uses: actions/upload-artifact@v4
         with:
           name: lightmere-windows-x64
           path: dist/*.zip
-          if-no-files-found: error
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
 
   linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Dependencies
-        run: sudo apt-get update && sudo apt-get install -y build-essential cmake libsdl2-dev
-
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev
       - name: Build
         run: |
-          cmake --preset linux
-          cmake --build --preset linux --parallel
-
+          cmake --preset linux -DLM_LINUX_PORTABLE=ON
+          cmake --build build -j
       - name: Package
-        shell: bash
         run: |
-          set -euo pipefail
-
-          VERSION="${GITHUB_REF_NAME}"
-          if [[ "${GITHUB_REF_TYPE}" != "tag" ]]; then
-            VERSION="$(sed -nE 's/^project\(Lightmere VERSION ([0-9.]+).*/\1/p' CMakeLists.txt | head -n 1)"
-            VERSION="v${VERSION}"
-          fi
-
-          STAGE="dist/Lightmere"
-          mkdir -p "${STAGE}"
-          install -m 755 build/lightmere "${STAGE}/lightmere"
-          cp README.md LICENSE CHANGELOG.md "${STAGE}/"
-
-          mkdir -p dist
-          tar -czf "dist/Lightmere-${VERSION}-Linux-x64.tar.gz" -C dist Lightmere
-
+          mkdir -p dist/lightmere
+          strip -o dist/lightmere/lightmere build/lightmere
+          cp README.md LICENSE CHANGELOG.md dist/lightmere/
+          cd dist && tar czf lightmere-${GITHUB_REF_NAME//\//-}-linux-x64.tar.gz lightmere
       - uses: actions/upload-artifact@v4
         with:
           name: lightmere-linux-x64
           path: dist/*.tar.gz
-          if-no-files-found: error
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.tar.gz
 
   macos:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Dependencies
-        run: brew install cmake sdl2
-
-      - name: Configure
-        run: |
-          cmake --preset macos \
-            -DCMAKE_PREFIX_PATH="$(brew --prefix sdl2)"
-
+        run: brew install sdl2
       - name: Build
-        run: cmake --build --preset macos --parallel
-
-      - name: Package application and DMG
-        shell: bash
         run: |
-          set -euo pipefail
-
-          VERSION="${GITHUB_REF_NAME}"
-          if [[ "${GITHUB_REF_TYPE}" != "tag" ]]; then
-            VERSION="$(sed -nE 's/^project\(Lightmere VERSION ([0-9.]+).*/\1/p' CMakeLists.txt | head -n 1)"
-            VERSION="v${VERSION}"
-          fi
-
-          APP="build/macos/Lightmere.app"
-          EXECUTABLE="${APP}/Contents/MacOS/Lightmere"
-          FRAMEWORKS="${APP}/Contents/Frameworks"
-          STAGE="dist/dmg"
-
-          test -d "${APP}"
-          test -x "${EXECUTABLE}"
-
-          # Bundle SDL2 so the app does not depend on Homebrew being installed.
-          SDL_PREFIX="$(brew --prefix sdl2)"
-          SDL_LIB="$(find "${SDL_PREFIX}/lib" -maxdepth 1 -name 'libSDL2*.dylib' -type f | grep -v '_test' | head -n 1)"
-          if [[ -z "${SDL_LIB}" ]]; then
-            echo "Could not locate the SDL2 dynamic library in ${SDL_PREFIX}/lib"
-            exit 1
-          fi
-
-          mkdir -p "${FRAMEWORKS}"
-          SDL_NAME="$(basename "${SDL_LIB}")"
-          cp -L "${SDL_LIB}" "${FRAMEWORKS}/${SDL_NAME}"
-
-          SDL_LOAD_PATH="$(otool -L "${EXECUTABLE}" | awk '/SDL2.*\.dylib/ { print $1; exit }')"
-          if [[ -z "${SDL_LOAD_PATH}" ]]; then
-            echo "The Lightmere executable does not show an SDL2 dylib dependency."
-            otool -L "${EXECUTABLE}"
-            exit 1
-          fi
-
-          install_name_tool -id "@rpath/${SDL_NAME}" "${FRAMEWORKS}/${SDL_NAME}"
-          install_name_tool -change "${SDL_LOAD_PATH}" "@rpath/${SDL_NAME}" "${EXECUTABLE}"
-          install_name_tool -add_rpath "@executable_path/../Frameworks" "${EXECUTABLE}"
-
-          # Ad-hoc signing lets macOS validate the modified bundle structure.
-          # It is not Apple Developer ID signing or notarization.
-          codesign --force --deep --sign - "${APP}"
-
-          mkdir -p "${STAGE}"
-          cp -R "${APP}" "${STAGE}/"
-          cp README.md LICENSE CHANGELOG.md "${STAGE}/"
-
-          mkdir -p dist
-          ARCH="$(uname -m)"
-          hdiutil create \
-            -volname "Lightmere" \
-            -srcfolder "${STAGE}" \
-            -ov \
-            -format UDZO \
-            "dist/Lightmere-${VERSION}-macOS-${ARCH}.dmg"
-
+          cmake --preset linux
+          cmake --build build -j
+      - name: Package
+        run: |
+          mkdir -p dist/lightmere
+          cp build/lightmere README.md LICENSE CHANGELOG.md dist/lightmere/
+          cd dist && zip -r lightmere-${GITHUB_REF_NAME//\//-}-macos.zip lightmere
       - uses: actions/upload-artifact@v4
         with:
           name: lightmere-macos
-          path: dist/*.dmg
-          if-no-files-found: error
-
-  publish-release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [ windows, linux, macos ]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Download all platform packages
-        uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
-
-      - name: Publish GitHub Release
+          path: dist/*.zip
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/*.zip
-            dist/*.tar.gz
-            dist/*.dmg
-          fail_on_unmatched_files: true
+          files: dist/*.zip

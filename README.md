@@ -105,6 +105,7 @@ The options are saved in `lightmere.ini` next to the executable.
 | `--debug` | developer mode: full window title (level, room, mode, filter), **F8** switches between the Lightmere view and the original screen, **F10** opens a panel to teleport to any level and room |
 | `--original` | run only the original game code (no routines translated to C++) |
 | `--custom1 N` | cheats for testing: 1 infinite help, 2 infinite magic, 4 infinite energy (add them up) |
+| `--texts <path>` | corrected game texts (a folder of text files made with `lmtext`, or one file): see [Correcting the texts](#correcting-the-texts) |
 
 ## Building
 
@@ -153,7 +154,27 @@ cmake --build build -j
 ### Developer tools
 
 `-DLM_BUILD_TOOLS=ON` also builds `amirun` (the machine without a window, for automated tests), `lmtool`
-(checks of the file formats) and `lmviewer` (viewer of the graphics and rooms). They are not needed to play.
+(checks of the file formats), `lmtext` (the game texts as readable files, see below) and `lmviewer` (viewer of
+the graphics and rooms). They are not needed to play.
+
+### Correcting the texts
+
+The dialogue texts of Darkmere (about 4,900 messages per language) are kept in the game files in a compressed
+form. `lmtext` writes them as plain, readable UTF-8 files, one per level plus the story and the program texts,
+with the place where each message is used and the English text as reference; identical texts are written once:
+
+```
+lmtext export <game folder> <out folder> [language]     # 0 EN, 1 FR, 2 DE, 3 IT (default)
+lmtext check  <game folder> <edited folder>             # characters, lengths, numbers
+lmtext diff   <game folder> <edited folder> <out file>  # only the corrected messages
+lightmere --texts <edited folder>                       # play with the corrected texts
+```
+
+Lightmere puts the corrected messages back into the texts in memory (the files of the game are not changed):
+it encodes them again in the game's format and moves the index of the messages, so the texts can be longer or
+shorter than the originals. The exported files hold the whole original texts, so they are for the user's own
+use and are not part of this project; the corrections shipped with Lightmere will hold only the corrected
+messages, each with a check of the original it replaces.
 
 ### Automated builds
 
@@ -179,11 +200,16 @@ screen is shown inside the new layout.
 
 ## Roadmap
 
-- Italian localisation: corrections of the original texts.
+- Italian localisation: corrections of the original texts (the tools are ready, the corrections in progress).
 - High-quality resampled and remastered audio, switchable at run time.
 - More routines translated to C++ (the first entries into level 3 rooms are slow in the original).
-- macOS and Android builds.
 - A wider view of the neighbouring rooms.
+- **macOS build** (contributions welcome): the code is portable; what is missing is an application bundle
+  (`Lightmere.app`, icon, SDL2 inside, Intel and Apple Silicon) built by GitHub Actions, the settings and saved
+  games in `~/Library/Application Support/Lightmere`, and tests on a Mac.
+- **Android build** (contributions welcome): an SDL2 Android project (Gradle, NDK), touch controls (virtual
+  joystick, fire, options menu and the game keys), choosing the four ADF images with the system file picker and
+  copying them into the app's storage, pause and resume, and a signed APK.
 
 ## Credits
 

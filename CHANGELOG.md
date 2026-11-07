@@ -3,6 +3,13 @@
 The version number is set only in `CMakeLists.txt` (`project(Lightmere VERSION x.y.z)`). It appears in the window
 title and in the properties of the Windows executable.
 
+## Next version (in development)
+
+- **Correcting the game texts**: `lmtext` (developer tool) writes the texts of a language as readable files and
+  checks the corrected ones; `--texts <folder>` plays with the corrections. The messages are encoded again in the
+  game's format, so they can be longer or shorter than the originals; longer place names are shown in full in
+  the Lightmere view.
+
 ## 0.8.0 (first public release)
 
 - The project is now called **Lightmere**; the executable is `lightmere`. Licence GPL-3.0-or-later; most of the

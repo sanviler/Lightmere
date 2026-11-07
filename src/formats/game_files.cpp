@@ -117,6 +117,13 @@ Bytes GameFiles::read(const std::string& name) const {
     return it->second.inMemory ? it->second.data : readFile(it->second.path);
 }
 
+void GameFiles::replace(const std::string& name, Bytes data) {
+    auto it = files_.find(lower(name));
+    if (it == files_.end()) throw FormatError("game file not found: " + name);
+    it->second.data = std::move(data);
+    it->second.inMemory = true;
+}
+
 std::vector<std::string> GameFiles::names() const {
     std::vector<std::string> v;
     for (const auto& [k, e] : files_) v.push_back(k);

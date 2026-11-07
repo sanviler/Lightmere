@@ -212,8 +212,10 @@ void PortingView::buildCanvas(amiga::Machine& m, bool screen, double fade) {
     if (!screen) {
         std::unordered_map<uint8_t, uint32_t> seen;
         bool ok = true;
+        // only the place name box (up to the target box at x = 192): a longer name, from corrected texts, goes
+        // on into the target box on the game screen, where the screen holds the target instead
         for (size_t i = 0; i < textFrame_.px.size() && ok; ++i)
-            if (const uint8_t ix = textFrame_.px[i]) {
+            if (const uint8_t ix = textFrame_.px[i]; ix && int(i % size_t(SW)) < 192) {
                 const uint32_t c = screen_[i];
                 auto [it, fresh] = seen.emplace(ix, c);
                 if (!fresh && it->second != c) ok = false;
