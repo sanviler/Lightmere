@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 # Lightmere version: set only here. It goes into version.h (window title) and the Windows file properties;
 # history in CHANGELOG.md.
-project(Lightmere VERSION 0.8.0 LANGUAGES CXX)
+project(Lightmere VERSION 0.8.2 LANGUAGES CXX)
 if(NOT PROJECT_VERSION_PATCH)
   set(PROJECT_VERSION_PATCH 0)
 endif()

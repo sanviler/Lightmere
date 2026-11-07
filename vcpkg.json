@@ -1,5 +1,5 @@
 {
   "name": "lightmere",
-  "version-string": "0.8.0",
+  "version-string": "0.8.2",
   "dependencies": [ "sdl2" ]
 }

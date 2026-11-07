@@ -200,13 +200,10 @@ screen is shown inside the new layout.
 
 ## Roadmap
 
-- Italian localisation: corrections of the original texts (the tools are ready, the corrections in progress).
+- Localisation revisioning: corrections of the original texts (the tools are ready, the corrections in progress).
 - High-quality resampled and remastered audio, switchable at run time.
 - More routines translated to C++ (the first entries into level 3 rooms are slow in the original).
 - A wider view of the neighbouring rooms.
-- **macOS build** (contributions welcome): the code is portable; what is missing is an application bundle
-  (`Lightmere.app`, icon, SDL2 inside, Intel and Apple Silicon) built by GitHub Actions, the settings and saved
-  games in `~/Library/Application Support/Lightmere`, and tests on a Mac.
 - **Android build** (contributions welcome): an SDL2 Android project (Gradle, NDK), touch controls (virtual
   joystick, fire, options menu and the game keys), choosing the four ADF images with the system file picker and
   copying them into the app's storage, pause and resume, and a signed APK.
