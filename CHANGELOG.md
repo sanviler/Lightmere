@@ -26,7 +26,7 @@ title and in the properties of the Windows executable.
 - The shape of the panel is rebuilt at run time from the user's game files instead of being stored in the source.
 - Sources and comments translated to English; developer tools are built only with `-DLM_BUILD_TOOLS=ON`.
 - Single self-contained Windows executable (static SDL2 and C++ runtime); automated builds for Windows, Linux
-  and macOS; portable zip.
+  and macOS; portable zip for Windows, Linux build for glibc 2.34 and later (Ubuntu 22.04, Debian 12, ...).
 
 ## Before 0.8.0 (private development versions)
 

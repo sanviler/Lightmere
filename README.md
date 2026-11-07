@@ -125,12 +125,22 @@ Lightmere is written in C++20 with CMake and SDL2. The Moira 68000 core is inclu
 
 ### Linux
 
+The ready-made Linux build (`lightmere-<version>-linux-x64.tar.gz`) runs on x86-64 distributions with glibc 2.34
+or later (Ubuntu 22.04, Debian 12, Fedora 35 and newer) and needs only SDL2, which most desktops already have
+(`sudo apt install libsdl2-2.0-0` on Debian and Ubuntu, `sudo dnf install SDL2` on Fedora). Extract it, copy
+the four ADF images next to `lightmere` and run `./lightmere`.
+
+To build it:
+
 ```
 sudo apt install build-essential cmake libsdl2-dev     # Debian, Ubuntu; other distributions: SDL2 development package
 cmake --preset linux
 cmake --build build -j
 ./build/lightmere
 ```
+
+`-DLM_LINUX_PORTABLE=ON` (used for the release) links the C++ runtime into the executable and avoids the
+newest glibc functions, so that it runs on older distributions too.
 
 ### macOS (not tested yet)
 
