@@ -28,6 +28,8 @@ of menus and dialogs.
     panel in the bottom corners (hero on the left, target on the right);
   - torches and lanterns of the neighbouring rooms are animated too;
   - smooth room changes and fades, without the flicker of the original screen.
+- **Graphics filter** (options menu): CRT (crt-pixie style at the integer scale of each part of the view, the
+  default), Dynamic Light or off; one at a time.
 - **Dynamic Light** (optional): rooms with fire are put in a cool half-light, with a warm, flickering light around
   torches, lanterns and fireplaces. Rooms without fire stay as they are.
 - **Modern background for menus and dialogs** (optional): the scene behind menus is blurred and darkened instead
@@ -72,8 +74,9 @@ the executable.
 |---|---|
 | Numeric keypad **8 4 6 5** (or 2), 7 9 1 3 diagonals | joystick, when the keyboard is assigned to a control port |
 | **Right Ctrl** | fire (keypad 0: second button) |
-| **Esc** | options menu (fullscreen, dynamic light, modern background, control ports, quit) |
+| **Esc** | options menu (fullscreen, graphics filter, modern background, control ports, quit) |
 | **F7** | menu and dialog background: modern (blurred) / original (black checkerboard) |
+| **F5** | CRT filter on / off |
 | **F9** | Dynamic Light on / off |
 | **F11** | window / fullscreen |
 | **F12** | screenshot (PNG next to the executable) |

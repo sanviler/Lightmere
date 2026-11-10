@@ -21,6 +21,7 @@
 //  - anything else without the panel (game over): the whole original screen over the blurred layout.
 #include "amiga/machine.h"
 #include "app/panel_shape.h"
+#include "app/picture_blit.h"
 #include "engine/room_renderer.h"
 #include "game/live_view.h"
 #include "game/panel_text.h"
@@ -34,6 +35,9 @@ namespace lm {
 struct ViewOptions {
     bool dynamicLight = false;
     bool modernBackground = true;
+    // CRT filter (crt-pixie style, at the integer scale of each part) on the room, the corners, the place name
+    // and the game menus. One graphics filter at a time: with the CRT filter on, Dynamic Light is not used.
+    bool crt = false;
 };
 
 class PortingView {
@@ -65,7 +69,11 @@ public:
 private:
     void detectPanel(amiga::Machine& m);
     void buildCanvas(amiga::Machine& m, bool screen, double fade);
-    void drawLayout(int vx, int vy, int dw, int k, int c, int wh, int nameScale);
+    struct Geometry {
+        SDL_Rect room, left, right, name;   // destination rectangles
+        int k = 1;                          // room scale rounded (checkerboard, blur)
+    };
+    void drawLayout(const Geometry& g);
 
     SDL_Renderer* ren_;
     dm::game::LiveView& live_;
@@ -97,6 +105,8 @@ private:
     SDL_Texture* inactiveTex_ = nullptr;
     SDL_Texture* menuBg_ = nullptr;
     int menuBgW_ = 0, menuBgH_ = 0;
+    bool crtOn_ = false;                        // the regions go through PictureBlit (CRT)
+    PictureBlit roomBlit_, leftBlit_, rightBlit_, nameBlit_, menuBlit_;
     SDL_Texture* checkerTex_ = nullptr;
     int checkerW_ = 0, checkerH_ = 0;
 };

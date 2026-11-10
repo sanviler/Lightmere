@@ -297,35 +297,53 @@ void PortingView::buildCanvas(amiga::Machine& m, bool screen, double fade) {
     roomDirty_ = true;
 }
 
-void PortingView::drawLayout(int vx, int vy, int dw, int k, int c, int wh, int nameScale) {
-    const SDL_Rect vs{0, 0, SW, kViewH}, vd{vx, vy, dw, kViewH * k};
-    if (lightOn_ && roomTex_) SDL_RenderCopy(ren_, roomTex_, nullptr, &vd);
-    else SDL_RenderCopy(ren_, canvasTex_, &vs, &vd);
-    const int ch = kCornerH * c;
-    const SDL_Rect ls{0, kViewH, kSplitX, kCornerH}, ld{vx, wh - ch, kSplitX * c, ch};
-    const SDL_Rect rs{kSplitX, kViewH, SW - kSplitX, kCornerH}, rd{vx + dw - (SW - kSplitX) * c, wh - ch, (SW - kSplitX) * c, ch};
-    SDL_RenderCopy(ren_, canvasTex_, &ls, &ld);
-    SDL_RenderCopy(ren_, canvasTex_, &rs, &rd);
+void PortingView::drawLayout(const Geometry& g) {
+    if (crtOn_) {
+        roomBlit_.draw(ren_, canvas_.data(), SW, SW, kViewH, g.room, crtOn_, 1, false);
+        const uint32_t* corners = canvas_.data() + size_t(kViewH) * SW;
+        leftBlit_.draw(ren_, corners, SW, kSplitX, kCornerH, g.left, crtOn_);
+        rightBlit_.draw(ren_, corners + kSplitX, SW, SW - kSplitX, kCornerH, g.right, crtOn_);
+        if (nameW_ > 0)
+            nameBlit_.draw(ren_, canvas_.data() + size_t(kViewH + kCornerH) * SW, SW, nameW_, kNameH, g.name, crtOn_);
+        return;
+    }
+    const SDL_Rect vs{0, 0, SW, kViewH};
+    if (lightOn_ && roomTex_) SDL_RenderCopy(ren_, roomTex_, nullptr, &g.room);
+    else SDL_RenderCopy(ren_, canvasTex_, &vs, &g.room);
+    const SDL_Rect ls{0, kViewH, kSplitX, kCornerH};
+    const SDL_Rect rs{kSplitX, kViewH, SW - kSplitX, kCornerH};
+    SDL_RenderCopy(ren_, canvasTex_, &ls, &g.left);
+    SDL_RenderCopy(ren_, canvasTex_, &rs, &g.right);
     if (nameW_ > 0) {
-        const int nameH = kNameH * nameScale;
         const SDL_Rect ns{0, kViewH + kCornerH, nameW_, kNameH};
-        const SDL_Rect nd{vx + (dw - nameW_ * nameScale) / 2, std::max(0, (vy - nameH) / 2), nameW_ * nameScale, nameH};
-        SDL_RenderCopy(ren_, canvasTex_, &ns, &nd);
+        SDL_RenderCopy(ren_, canvasTex_, &ns, &g.name);
     }
 }
 
 void PortingView::draw(int ww, int wh, const ViewOptions& o) {
     // room scale: the largest integer for which 320 columns and 176 rows fit; corners at 5/6 of it (5 at 1080p:
     // checked on 644 rooms, they never cover the parts of the rooms); the place name at the scale that fits in
-    // the band above the room
+    // the band above the room. Always integer scales (a non-integer scale would only stretch the corners and
+    // blur the room).
+    Geometry g;
     const int k = std::max(1, std::min(ww / SW, wh / kViewH));
-    const int c = std::max(1, k * 5 / 6);
-    const int dw = SW * k, vx = (ww - dw) / 2;
-    const int band = wh - kViewH * k;
-    const int nsc = std::max(1, std::min(c, band / kNameH));
-    const int vy = std::max(0, std::min(band, kNameH * nsc));
-    // Dynamic Light: the room is filtered at a scale that divides k (sharp pixels)
-    lightOn_ = o.dynamicLight;
+    {
+        const int c = std::max(1, k * 5 / 6);
+        const int dw = SW * k, vx = (ww - dw) / 2;
+        const int band = wh - kViewH * k;
+        const int nsc = std::max(1, std::min(c, band / kNameH));
+        const int vy = std::max(0, std::min(band, kNameH * nsc));
+        const int ch = kCornerH * c;
+        g.room = {vx, vy, dw, kViewH * k};
+        g.left = {vx, wh - ch, kSplitX * c, ch};
+        g.right = {vx + dw - (SW - kSplitX) * c, wh - ch, (SW - kSplitX) * c, ch};
+        g.name = {vx + (dw - nameW_ * nsc) / 2, std::max(0, (vy - kNameH * nsc) / 2), nameW_ * nsc, kNameH * nsc};
+    }
+    g.k = k;
+    crtOn_ = o.crt;
+    const int vx = g.room.x, vy = g.room.y;
+    // Dynamic Light (not with the CRT filter): the room is filtered at a scale that divides k (sharp pixels)
+    lightOn_ = o.dynamicLight && !o.crt;
     if (lightOn_ && roomDirty_) {
         const int s = k % 3 == 0 ? 3 : k % 2 == 0 ? 2 : 1;
         light_.process(canvas_.data(), SW, kViewH, s);
@@ -344,15 +362,19 @@ void PortingView::draw(int ww, int wh, const ViewOptions& o) {
     // menus: at the largest scale for which their 200 rows fit, centred
     const int k2 = std::max(1, std::min(k, wh / SH));
     const SDL_Rect menuDst{(ww - SW * k2) / 2, (wh - SH * k2) / 2, SW * k2, SH * k2};
+    auto drawMenu = [&](SDL_Texture* tex, const std::vector<uint32_t>& layer, PictureBlit& b) {
+        if (crtOn_ && layer.size() >= size_t(SW) * SH) b.draw(ren_, layer.data(), SW, SW, SH, menuDst, crtOn_);
+        else SDL_RenderCopy(ren_, tex, nullptr, &menuDst);
+    };
     if (!overlay_) {
-        drawLayout(vx, vy, dw, k, c, wh, nsc);
+        drawLayout(g);
         wasOverlay_ = false;
         return;
     }
     if (!o.modernBackground && !wholeScreenOverlay_) {
         // original background: the layout as it is, covered by a checkerboard of black pixels as large as the
         // room pixels, as the game does; on top the menu, inactive windows with their checkerboard
-        drawLayout(vx, vy, dw, k, c, wh, nsc);
+        drawLayout(g);
         const int cw = ww / k + 4, chh = wh / k + 4;
         if (!checkerTex_ || checkerW_ != cw || checkerH_ != chh) {
             if (checkerTex_) SDL_DestroyTexture(checkerTex_);
@@ -367,7 +389,7 @@ void PortingView::draw(int ww, int wh, const ViewOptions& o) {
             const SDL_Rect cd{vx % k - 2 * k, vy % k - 2 * k, cw * k, chh * k};   // aligned to the room pixels
             SDL_RenderCopy(ren_, checkerTex_, nullptr, &cd);
         }
-        SDL_RenderCopy(ren_, menuTex_, nullptr, &menuDst);
+        drawMenu(menuTex_, menuLayer_, menuBlit_);
         wasOverlay_ = true;
         return;
     }
@@ -382,7 +404,7 @@ void PortingView::draw(int ww, int wh, const ViewOptions& o) {
         if (target && SDL_SetRenderTarget(ren_, target) == 0) {
             SDL_SetRenderDrawColor(ren_, 0, 0, 0, 255);
             SDL_RenderClear(ren_);
-            drawLayout(vx, vy, dw, k, c, wh, nsc);
+            drawLayout(g);
             SDL_RenderReadPixels(ren_, nullptr, SDL_PIXELFORMAT_ARGB8888, px.data(), ww * 4);
             SDL_SetRenderTarget(ren_, nullptr);
         }
@@ -394,8 +416,8 @@ void PortingView::draw(int ww, int wh, const ViewOptions& o) {
         menuBgValid_ = true;
     }
     SDL_RenderCopy(ren_, menuBg_, nullptr, nullptr);
-    SDL_RenderCopy(ren_, inactiveTex_, nullptr, &menuDst);
-    SDL_RenderCopy(ren_, menuTex_, nullptr, &menuDst);
+    SDL_RenderCopy(ren_, inactiveTex_, nullptr, &menuDst);     // already soft (linear scaling)
+    drawMenu(menuTex_, menuLayer_, menuBlit_);
     wasOverlay_ = true;
 }
 

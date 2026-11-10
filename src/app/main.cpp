@@ -12,7 +12,7 @@
 //                             all other keys go to the Amiga keyboard, arrows included
 //   Escape                    options menu (fullscreen, dynamic light, modern background, quit)
 //   F7                        background of menus and dialogs: modern (blurred) / original (black checkerboard)
-//   F9                        Dynamic Light filter on / off
+//   F5 / F9                   graphics filter: CRT on / off, Dynamic Light on / off (one at a time)
 //   F11                       window / fullscreen
 //   F12                       screenshot (PNG next to the executable)
 //   with --debug only:  F8    Lightmere view / original screen      F10   teleport to a level and room
@@ -33,6 +33,7 @@
 #include "amiga/machine.h"
 #include "app/input.h"
 #include "app/keymap.h"
+#include "app/picture_blit.h"
 #include "app/porting_view.h"
 #include "app/ui.h"
 #include "formats/epf.h"
@@ -62,7 +63,7 @@ namespace fs = std::filesystem;
 
 namespace {
 
-constexpr const char* kTitle = "Lightmere ver. " LM_VERSION_STRING;
+constexpr const char* kTitle = "Lightmere ver. " LM_VERSION_STRING " (Darkmere)";
 
 // paths: UTF-8 in lightmere.ini and from the system dialogs, native in std::filesystem
 fs::path toPath(const std::string& utf8) { return fs::path(std::u8string(utf8.begin(), utf8.end())); }
@@ -118,6 +119,14 @@ int main(int argc, char** argv) {
     }
     const bool testing = testFrames >= 0;
     if (testing) debug = true;                      // tests use the debug tools (teleport, full title)
+    // real pixels on Windows with display scaling (125%, 150%): without this Windows stretches the window and the
+    // integer scales of the view are lost (set before SDL_Init)
+#ifdef SDL_HINT_WINDOWS_DPI_AWARENESS
+    SDL_SetHint(SDL_HINT_WINDOWS_DPI_AWARENESS, "permonitorv2");
+#endif
+#ifdef SDL_HINT_WINDOWS_DPI_SCALING
+    SDL_SetHint(SDL_HINT_WINDOWS_DPI_SCALING, "0");
+#endif
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) {
         std::fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
         return 1;
@@ -230,11 +239,19 @@ int main(int argc, char** argv) {
 
     lm::ViewOptions opt;
     bool portingMode = true;                        // F8 (debug): Lightmere view or original screen
+    // graphics filter: CRT (default), Dynamic Light or off, one at a time
+    lm::GraphicsFilter filter = testing ? lm::GraphicsFilter::Off : lm::GraphicsFilter::Crt;
+    auto applyFilter = [&] {
+        opt.crt = filter == lm::GraphicsFilter::Crt;
+        opt.dynamicLight = filter == lm::GraphicsFilter::DynamicLight;
+    };
     if (haveSettings) {
-        opt.dynamicLight = settings.get("dynamic_light", "off") == "on";
+        const std::string f = settings.get("graphics_filter", settings.get("dynamic_light", "off") == "on" ? "light" : "crt");
+        if (!testing) filter = f == "light" ? lm::GraphicsFilter::DynamicLight : f == "off" ? lm::GraphicsFilter::Off : lm::GraphicsFilter::Crt;
         opt.modernBackground = settings.get("modern_background", "on") == "on";
         if (!fullscreen) fullscreen = settings.get("fullscreen", "off") == "on";
     }
+    applyFilter();
     // the two Amiga control ports
     lm::InputPorts ports;
     if (haveSettings && !settings.get("port1").empty()) ports.load(settings.get("port1"), settings.get("port2"));
@@ -246,6 +263,10 @@ int main(int argc, char** argv) {
                                        SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
     if (!win) { fail(SDL_GetError()); SDL_Quit(); return 1; }
     if (winW > 0 && winH > 0) SDL_SetWindowSize(win, winW, winH);
+    else if (SDL_DisplayMode dm{}; SDL_GetDesktopDisplayMode(0, &dm) == 0 && dm.w >= 640 && dm.h >= 400) {
+        SDL_SetWindowSize(win, dm.w / 2, dm.h / 2);                     // first start: half the desktop
+        SDL_SetWindowPosition(win, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+    }
     SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     if (!ren) ren = SDL_CreateRenderer(win, -1, 0);
     if (!ren) { fail(SDL_GetError()); SDL_Quit(); return 1; }
@@ -253,7 +274,7 @@ int main(int argc, char** argv) {
     auto isFullscreen = [&] { return (SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0; };
     auto saveSettings = [&] {
         if (testing) return;
-        settings.set("dynamic_light", opt.dynamicLight ? "on" : "off");
+        settings.set("graphics_filter", filter == lm::GraphicsFilter::Crt ? "crt" : filter == lm::GraphicsFilter::DynamicLight ? "light" : "off");
         settings.set("modern_background", opt.modernBackground ? "on" : "off");
         settings.set("fullscreen", isFullscreen() ? "on" : "off");
         settings.set("port1", ports.save(0));
@@ -274,19 +295,19 @@ int main(int argc, char** argv) {
     }
     SDL_Texture* screenTex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, W, H);
     const SDL_Rect amigaSrc{34, 18, 640, 200};      // the 320 x 200 game screen in the Amiga frame buffer
+    lm::PictureBlit screenBlit;                     // the same screen with the CRT filter
 
     // Lightmere's own windows (options menu, teleport), drawn with the game's 8x8 font
     lm::OptionsMenu menu;
     lm::TeleportPanel tp;
-    lm::TextPanel menuPanel(lm::OptionsMenu::kWidth, lm::OptionsMenu::kHeight);
+    dm::OptionsPanel menuPanel;                     // the options panel of the common core (fixed size)
     lm::TextPanel tpPanel(lm::TeleportPanel::kWidth, lm::TeleportPanel::kHeight);
     try {
         const dm::Bytes font = dm::EpfArchive(dm::readGameFile("fnt4_000.epf")).entry(0);
-        menuPanel.setFont(font);
         tpPanel.setFont(font);
     } catch (const std::exception& e) { std::fprintf(stderr, "font: %s\n", e.what()); }
-    SDL_Texture* menuTex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, menuPanel.width(), menuPanel.height());
-    SDL_SetTextureBlendMode(menuTex, SDL_BLENDMODE_BLEND);
+    SDL_Texture* menuTex = nullptr;                 // the options panel (made at its size, again if it grows)
+    int menuTexH = 0;
     SDL_Texture* tpTex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, tpPanel.width(), tpPanel.height());
     SDL_SetTextureBlendMode(tpTex, SDL_BLENDMODE_BLEND);
 
@@ -361,8 +382,9 @@ int main(int argc, char** argv) {
         switch (item) {
             case lm::OptionsMenu::Fullscreen:
                 SDL_SetWindowFullscreen(win, isFullscreen() ? 0 : SDL_WINDOW_FULLSCREEN_DESKTOP); saveSettings(); break;
-            case lm::OptionsMenu::DynamicLight:
-                opt.dynamicLight = !opt.dynamicLight; if (view) view->invalidate(); saveSettings(); break;
+            case lm::OptionsMenu::Filter:                   // CRT -> Dynamic Light -> off (right / Enter), back with left
+                filter = lm::GraphicsFilter((int(filter) + (fromLeftRight < 0 ? 2 : 1)) % 3);
+                applyFilter(); if (view) view->invalidate(); saveSettings(); break;
             case lm::OptionsMenu::ModernBackground:
                 opt.modernBackground = !opt.modernBackground; if (view) view->invalidate(); saveSettings(); break;
             case lm::OptionsMenu::Port1: case lm::OptionsMenu::Port2:
@@ -404,6 +426,11 @@ int main(int argc, char** argv) {
                         else if (sc == SDL_SCANCODE_RIGHT) menuActivate(menu.focus, 1);
                         else if (sc == SDL_SCANCODE_RETURN || sc == SDL_SCANCODE_KP_ENTER || sc == SDL_SCANCODE_SPACE) menuActivate(menu.focus, 0);
                         else if (sc == SDL_SCANCODE_F11) menuActivate(lm::OptionsMenu::Fullscreen, 1);
+                        else if (sc == SDL_SCANCODE_F5 || sc == SDL_SCANCODE_F9) {
+                            const auto f = sc == SDL_SCANCODE_F5 ? lm::GraphicsFilter::Crt : lm::GraphicsFilter::DynamicLight;
+                            filter = filter == f ? lm::GraphicsFilter::Off : f;
+                            applyFilter(); if (view) view->invalidate(); saveSettings();
+                        }
                         break;
                     }
                     // teleport panel (F10, debug)
@@ -443,8 +470,14 @@ int main(int argc, char** argv) {
                         if (portingMode && view) { opt.modernBackground = !opt.modernBackground; view->invalidate(); saveSettings(); }
                         break;
                     }
+                    if (dn && sc == SDL_SCANCODE_F5) {
+                        filter = filter == lm::GraphicsFilter::Crt ? lm::GraphicsFilter::Off : lm::GraphicsFilter::Crt;
+                        applyFilter(); if (view) view->invalidate(); saveSettings();
+                        break;
+                    }
                     if (dn && sc == SDL_SCANCODE_F9) {
-                        if (portingMode && view) { opt.dynamicLight = !opt.dynamicLight; view->invalidate(); saveSettings(); }
+                        filter = filter == lm::GraphicsFilter::DynamicLight ? lm::GraphicsFilter::Off : lm::GraphicsFilter::DynamicLight;
+                        applyFilter(); if (view) view->invalidate(); saveSettings();
                         break;
                     }
                     if (dn && sc == SDL_SCANCODE_F8) {
@@ -490,7 +523,7 @@ int main(int argc, char** argv) {
                 else if (cmd == "joy") ls >> scriptJoy;
                 else if (cmd == "shot") scriptShot = true;
                 else if (cmd == "f12") shotRequested = true;
-                else if (cmd == "light") { int v = 0; ls >> v; opt.dynamicLight = v != 0; if (view) view->invalidate(); }
+                else if (cmd == "light") { int v = 0; ls >> v; filter = v ? lm::GraphicsFilter::DynamicLight : lm::GraphicsFilter::Off; applyFilter(); if (view) view->invalidate(); }
                 else if (cmd == "menubg") { int v = 1; ls >> v; opt.modernBackground = v != 0; if (view) view->invalidate(); }
                 else if (cmd == "view") { int v = 1; ls >> v; portingMode = v && view; if (view) view->invalidate(); }
                 else if (cmd == "menu") { int v = 1; ls >> v; menu.open = v != 0; menu.focus = 0; }
@@ -566,7 +599,7 @@ int main(int argc, char** argv) {
                 if (lvl >= 1 && lvl <= 3 && rm < 0xFF) title += " - Level: " + std::to_string(lvl) + ", Room: " + std::to_string(rm);
             }
             title += !view ? " - Mode: Original (Lightmere view not available)" : portingMode ? " - Mode: Porting" : " - Mode: Original";
-            title += (portingMode && opt.dynamicLight) ? " - Filter: Dynamic Light" : " - Filter: No Filter";
+            title += opt.crt ? " - Filter: CRT" : (portingMode && opt.dynamicLight) ? " - Filter: Dynamic Light" : " - Filter: No Filter";
             if (portingMode) title += opt.modernBackground ? " - Background: Modern" : " - Background: Original";
         }
         if (fps >= 0 && !testing) title += " - " + std::to_string(fps) + " FPS";
@@ -584,11 +617,17 @@ int main(int argc, char** argv) {
         if (portingMode && view && view->active()) {
             view->draw(ww, wh, opt);
         } else {
-            SDL_UpdateTexture(screenTex, nullptr, m.framebuffer().data(), W * 4);
-            const int k = std::max(1, std::min(ww / 320, wh / 200));
             // outside the game (language, intro, presentations) centred; original mode (F8) at the top
+            const int k = std::max(1, std::min(ww / 320, wh / 200));
             const SDL_Rect dst{(ww - 320 * k) / 2, portingMode ? (wh - 200 * k) / 2 : 0, 320 * k, 200 * k};
-            SDL_RenderCopy(ren, screenTex, &amigaSrc, &dst);
+            if (opt.crt) {
+                // the 320 x 200 lores picture: every other pixel of the hires frame buffer
+                const uint32_t* fb = m.framebuffer().data() + size_t(amigaSrc.y) * W + size_t(amigaSrc.x);
+                screenBlit.draw(ren, fb, W, 320, 200, dst, opt.crt, 2, false);
+            } else {
+                SDL_UpdateTexture(screenTex, nullptr, m.framebuffer().data(), W * 4);
+                SDL_RenderCopy(ren, screenTex, &amigaSrc, &dst);
+            }
         }
         auto drawPanel = [&](lm::TextPanel& p, SDL_Texture* t) {
             SDL_UpdateTexture(t, nullptr, p.pixels().data(), p.width() * 4);
@@ -602,8 +641,23 @@ int main(int argc, char** argv) {
                 const lm::PortLabel l = ports.label(i);
                 pt[i] = {int(l.kind), l.number, l.name};
             }
-            menu.draw(menuPanel, language(), isFullscreen(), opt.dynamicLight, opt.modernBackground, pt[0], pt[1]);
-            drawPanel(menuPanel, menuTex);
+            menu.render(menuPanel, language(), isFullscreen(), filter, opt.modernBackground, pt[0], pt[1]);
+            // over the filtered picture (never through the CRT filter), darkened behind, at the panel's own scale
+            SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(ren, 0, 0, 0, 170);
+            SDL_RenderFillRect(ren, nullptr);
+            if (!menuTex || menuTexH < menuPanel.height()) {
+                if (menuTex) SDL_DestroyTexture(menuTex);
+                menuTexH = menuPanel.height();
+                menuTex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING, menuPanel.width(), menuTexH);
+            }
+            if (menuTex) {
+                const SDL_Rect src{0, 0, menuPanel.width(), menuPanel.height()};
+                SDL_UpdateTexture(menuTex, &src, menuPanel.pixels().data(), menuPanel.width() * 3);
+                const int s = dm::OptionsPanel::scaleFor(ww, wh, menuPanel.width(), menuPanel.height());
+                const SDL_Rect d{(ww - menuPanel.width() * s) / 2, (wh - menuPanel.height() * s) / 2, menuPanel.width() * s, menuPanel.height() * s};
+                SDL_RenderCopy(ren, menuTex, &src, &d);
+            }
         } else if (tp.open || pending.room >= 0) {
             tp.draw(tpPanel, !tp.open);
             drawPanel(tpPanel, tpTex);
@@ -634,9 +688,10 @@ int main(int argc, char** argv) {
     saveSettings();
     if (audio) SDL_CloseAudioDevice(audio);
     view.reset();
-    SDL_DestroyTexture(menuTex);
+    if (menuTex) SDL_DestroyTexture(menuTex);
     SDL_DestroyTexture(tpTex);
     SDL_DestroyTexture(screenTex);
+    screenBlit.release();
     SDL_DestroyRenderer(ren);
     SDL_DestroyWindow(win);
     SDL_Quit();

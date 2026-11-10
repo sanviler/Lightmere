@@ -13,23 +13,24 @@ struct MenuTexts {
     const char* items[OptionsMenu::ItemCount];
     const char* on;
     const char* off;
+    const char* filters[3];         // off, CRT, Dynamic Light
     const char* hint;
     const char* devices[4];         // nothing, keyboard, mouse, joystick
     const char* missing;            // joystick not connected
     const char* keyboardHint;
 };
 const MenuTexts kTexts[4] = {
-    {"OPTIONS", {"FULLSCREEN", "DYNAMIC LIGHT", "MODERN BACKGROUND", "PORT 1", "PORT 2", "QUIT GAME", "BACK TO GAME"},
-     "ON", "OFF", "ALT+F4 ALSO QUITS", {"NONE", "KEYBOARD", "MOUSE", "JOYSTICK"}, "NOT CONNECTED",
+    {"OPTIONS", {"FULLSCREEN", "GRAPHICS FILTER", "MODERN BACKGROUND", "PORT 1", "PORT 2", "QUIT GAME", "BACK TO GAME"},
+     "ON", "OFF", {"OFF", "CRT", "DYNAMIC LIGHT"}, "ALT+F4 ALSO QUITS", {"NONE", "KEYBOARD", "MOUSE", "JOYSTICK"}, "NOT CONNECTED",
      "KEYPAD 8456, RIGHT CTRL FIRE"},
-    {"OPTIONS", {"PLEIN ECRAN", "LUMIERE DYNAMIQUE", "FOND MODERNE", "PORT 1", "PORT 2", "QUITTER LE JEU",
-     "RETOUR AU JEU"}, "OUI", "NON", "ALT+F4 QUITTE AUSSI", {"AUCUN", "CLAVIER", "SOURIS", "JOYSTICK"},
+    {"OPTIONS", {"PLEIN ECRAN", "FILTRE GRAPHIQUE", "FOND MODERNE", "PORT 1", "PORT 2", "QUITTER LE JEU",
+     "RETOUR AU JEU"}, "OUI", "NON", {"AUCUN", "CRT", "LUMIERE DYNAMIQUE"}, "ALT+F4 QUITTE AUSSI", {"AUCUN", "CLAVIER", "SOURIS", "JOYSTICK"},
      "NON CONNECTE", "PAVE 8456, CTRL DROIT TIR"},
-    {"OPTIONEN", {"VOLLBILD", "DYNAMISCHES LICHT", "MODERNER HINTERGRUND", "PORT 1", "PORT 2", "SPIEL BEENDEN",
-     "ZURUECK ZUM SPIEL"}, "AN", "AUS", "ALT+F4 BEENDET AUCH", {"KEINS", "TASTATUR", "MAUS", "JOYSTICK"},
+    {"OPTIONEN", {"VOLLBILD", "GRAFIKFILTER", "MODERNER HINTERGRUND", "PORT 1", "PORT 2", "SPIEL BEENDEN",
+     "ZURUECK ZUM SPIEL"}, "AN", "AUS", {"AUS", "CRT", "DYNAMISCHES LICHT"}, "ALT+F4 BEENDET AUCH", {"KEINS", "TASTATUR", "MAUS", "JOYSTICK"},
      "NICHT VERBUNDEN", "ZIFFERNBLOCK 8456, STRG RECHTS"},
-    {"OPZIONI", {"SCHERMO INTERO", "LUCE DINAMICA", "SFONDO MODERNO", "PORTA 1", "PORTA 2", "ESCI DAL GIOCO",
-     "TORNA AL GIOCO"}, "SI", "NO", "ANCHE ALT+F4 ESCE", {"NESSUNO", "TASTIERA", "MOUSE", "JOYSTICK"},
+    {"OPZIONI", {"SCHERMO INTERO", "FILTRO GRAFICO", "SFONDO MODERNO", "PORTA 1", "PORTA 2", "ESCI DAL GIOCO",
+     "TORNA AL GIOCO"}, "SI", "NO", {"NESSUNO", "CRT", "LUCE DINAMICA"}, "ANCHE ALT+F4 ESCE", {"NESSUNO", "TASTIERA", "MOUSE", "JOYSTICK"},
      "NON COLLEGATO", "TASTIERINO 8456, CTRL DX FUOCO"},
 };
 } // namespace
@@ -53,43 +54,35 @@ void TextPanel::text(int x, int y, const std::string& s, uint32_t colour) {
         }
 }
 
-void OptionsMenu::draw(TextPanel& p, Language lang, bool fullscreen, bool dynamicLight, bool modernBackground,
-                       const PortText& port1, const PortText& port2) const {
+void OptionsMenu::render(dm::OptionsPanel& p, Language lang, bool fullscreen, GraphicsFilter filter,
+                         bool modernBackground, const PortText& port1, const PortText& port2) const {
     const MenuTexts& t = kTexts[int(lang) & 3];
-    p.clear(kBackground, kBorder);
-    p.textCentred(8, t.title, kGold);
-    const bool values[3] = {fullscreen, dynamicLight, modernBackground};
-    const PortText* ports[2] = {&port1, &port2};
-    for (int i = 0; i < ItemCount; ++i) {
-        const int y = 26 + i * 12 + (i >= Port1 ? 6 : 0) + (i >= Quit ? 6 : 0);
-        const uint32_t colour = i == focus ? kWhite : kGrey;
-        if (i == focus) p.text(8, y, ">", kGold);
-        p.text(20, y, t.items[i], colour);
-        std::string v;
-        uint32_t vc = kGrey;
-        if (i < Port1) {
-            v = values[i] ? t.on : t.off;
-            vc = values[i] ? kGold : kGrey;
-        } else if (i <= Port2) {
-            const PortText& pt = *ports[i - Port1];
-            v = t.devices[pt.kind & 3];
-            if (pt.kind == 3 && pt.number > 0) v += " " + std::to_string(pt.number);
-            vc = pt.kind == 0 || (pt.kind == 3 && pt.number == 0) ? kGrey : kGold;
-            if (i == focus) v = "< " + v + " >";
-        }
-        if (!v.empty()) p.text(p.width() - 12 - 8 * int(v.size()), y, v, vc);
-    }
+    auto portValue = [&](const PortText& pt) {
+        std::string v = t.devices[pt.kind & 3];
+        if (pt.kind == 3 && pt.number > 0) v += " " + std::to_string(pt.number);
+        return v;
+    };
+    std::vector<dm::MenuItem> items = {
+        {t.items[Fullscreen], fullscreen ? t.on : t.off},
+        {t.items[Filter], t.filters[int(filter) % 3]},
+        {t.items[ModernBackground], modernBackground ? t.on : t.off},
+        {t.items[Port1], portValue(port1)},
+        {t.items[Port2], portValue(port2)},
+        {t.items[Quit], ""},
+        {t.items[Back], ""}};
     // bottom line: details of the focused port, otherwise the quit hint
     std::string hint = t.hint;
     if (focus == Port1 || focus == Port2) {
-        const PortText& pt = *ports[focus - Port1];
+        const PortText& pt = focus == Port1 ? port1 : port2;
         if (pt.kind == 1) hint = t.keyboardHint;
         else if (pt.kind == 3) hint = pt.number == 0 ? std::string(t.missing) : pt.name;
         else hint.clear();
     }
-    for (char& ch : hint) if (ch >= 'a' && ch <= 'z') ch = char(ch - 32);   // the panel uses capitals only
-    if (hint.size() > size_t(p.width() / 8 - 2)) hint.resize(size_t(p.width() / 8 - 2));
-    p.textCentred(p.height() - 12, hint, kGrey);
+    for (char& ch : hint) if (ch >= 'a' && ch <= 'z') ch = char(ch - 32);   // the font has capitals only
+    p.title = t.title;
+    p.footer = hint;
+    p.focus = focus;
+    p.render(items);
 }
 
 void TeleportPanel::draw(TextPanel& p, bool waitingForLevel) const {

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 # Lightmere version: set only here. It goes into version.h (window title) and the Windows file properties;
 # history in CHANGELOG.md.
-project(Lightmere VERSION 0.8.2 LANGUAGES CXX)
+project(Lightmere VERSION 1.0.0 LANGUAGES CXX)
 if(NOT PROJECT_VERSION_PATCH)
   set(PROJECT_VERSION_PATCH 0)
 endif()
@@ -76,6 +76,9 @@ set(LM_SDL_LIBS $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main> $<IF:$<TARGET_EXISTS:SDL
 set(LM_GAME_SOURCES
   src/app/main.cpp
   src/app/porting_view.cpp
+  src/app/picture_blit.cpp
+  src/ui/options_panel.cpp
+  src/platform/picture.cpp
   src/app/menu_layers.cpp
   src/app/panel_shape.cpp
   src/app/ui.cpp
@@ -90,7 +93,8 @@ if(WIN32)
   list(APPEND LM_GAME_SOURCES ${CMAKE_BINARY_DIR}/generated/lightmere.rc)
 endif()
 add_executable(lightmere WIN32 ${LM_GAME_SOURCES})
-target_link_libraries(lightmere PRIVATE lmamiga ${LM_SDL_LIBS})
+find_package(Threads REQUIRED)                             # the picture filters use worker threads
+target_link_libraries(lightmere PRIVATE lmamiga ${LM_SDL_LIBS} Threads::Threads)
 if(WIN32)
   target_link_libraries(lightmere PRIVATE ole32 shell32)   # the folder picker (IFileOpenDialog)
 endif()

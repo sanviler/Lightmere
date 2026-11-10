@@ -3,7 +3,27 @@
 The version number is set only in `CMakeLists.txt` (`project(Lightmere VERSION x.y.z)`). It appears in the window
 title and in the properties of the Windows executable.
 
-## Next version (in development)
+## 1.0.0
+
+- Graphics filter (options menu, one choice instead of two switches): CRT, DYNAMIC LIGHT or OFF; F5 switches
+  the CRT filter, F9 Dynamic Light. The CRT filter (crt-pixie style) is computed at the integer scale of each part
+  of the view: the room, the panel corners, the place name, the game menus and the screens outside the game.
+  Setting `graphics_filter` (`crt`, `light`, `off`); CRT by default. The view keeps its integer scales.
+- Options panel: the same fixed size in every port (256 x 200 pixels of its own, at an integer scale of its own),
+  drawn over the picture and never through the CRT filter. Long values and footers (for example the name of a
+  controller) are split on more lines instead of widening the panel; only if the text needs more rows the panel
+  grows downwards.
+  The options menu now uses this panel (the font of the common core) in the four languages.
+
+## 0.9.0
+
+- Windows: the window and the fullscreen picture use the real pixels of the screen also with display scaling
+  (125%, 150%, ...): before, Windows stretched the window and the integer scales of the view were lost (blurred,
+  smaller picture).
+- First start: the window opens at half the desktop size (then the saved size, as before).
+- Window title: name, version, game and frames per second.
+- CI: Windows built with MSVC + Ninja + vcpkg (`windows-ci` preset, as the other ports); the `windows-vcpkg` preset
+  for Visual Studio 2022 stays for local builds.
 
 - **Correcting the game texts**: `lmtext` (developer tool) writes the texts of a language as readable files and
   checks the corrected ones; `--texts <folder>` plays with the corrections. The messages are encoded again in the

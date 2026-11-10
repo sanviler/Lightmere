@@ -16,18 +16,23 @@ permissions:
 
 jobs:
   windows:
-    runs-on: windows-2022
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Configure (vcpkg, static SDL2)
+      - name: Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure (Ninja, vcpkg, static SDL2)
         shell: pwsh
         run: |
           $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT
-          cmake --preset windows-vcpkg
+          cmake --preset windows-ci
 
       - name: Build
-        run: cmake --build --preset release
+        run: cmake --build --preset windows-ci
 
       - name: Package
         shell: pwsh
@@ -36,7 +41,7 @@ jobs:
           if (-not $version.StartsWith("v")) {
             $version = ""
           }
-          ./scripts/package.ps1 -BuildDir build/Release -OutDir dist -Version $version
+          ./scripts/package.ps1 -BuildDir build-ci -OutDir dist -Version $version
 
       - uses: actions/upload-artifact@v4
         with:

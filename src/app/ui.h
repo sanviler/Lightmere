@@ -4,6 +4,7 @@
 //  - the options menu (Escape), in the language chosen at the start of the game;
 //  - the debug teleport panel (F10, only with --debug).
 #include "formats/common.h"
+#include "ui/options_panel.h"
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -32,8 +33,13 @@ private:
 // game languages, in the order of the keys 1-4 on the language screen (L1FBCD)
 enum class Language { English = 0, French = 1, German = 2, Italian = 3 };
 
+// graphics filter of the Lightmere view (one at a time: both would filter the same pixels)
+enum class GraphicsFilter { Off = 0, Crt = 1, DynamicLight = 2 };
+
+// the options menu (Escape): the options panel of the common core (fixed size, the same in every port), in the
+// language chosen at the start of the game
 struct OptionsMenu {
-    enum Item { Fullscreen, DynamicLight, ModernBackground, Port1, Port2, Quit, Back, ItemCount };
+    enum Item { Fullscreen, Filter, ModernBackground, Port1, Port2, Quit, Back, ItemCount };
     bool open = false;
     int focus = 0;
     // what is plugged into a control port, as the menu shows it
@@ -42,10 +48,9 @@ struct OptionsMenu {
         int number = 0;             // joystick number, 0 = not connected
         std::string name;           // joystick name (shown at the bottom when the item has the focus)
     };
-    // draws the menu with the current values of the three switches and the two ports
-    void draw(TextPanel& p, Language lang, bool fullscreen, bool dynamicLight, bool modernBackground,
-              const PortText& port1, const PortText& port2) const;
-    static constexpr int kWidth = 288, kHeight = 148;
+    // fills the panel with the current values of the switches and the two ports
+    void render(dm::OptionsPanel& p, Language lang, bool fullscreen, GraphicsFilter filter, bool modernBackground,
+                const PortText& port1, const PortText& port2) const;
 };
 
 struct TeleportPanel {
